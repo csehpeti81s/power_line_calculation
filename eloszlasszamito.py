@@ -88,7 +88,8 @@ def main():
                 Ig_ratio, void = currentRatio(Z_e, R_sz)
                 txt = f'A {(nOszlopkoz - i)}. oszl. Z_e={Z_e:.2f} árameloszlás {abs(Ig_ratio):.2f}.'
                 #print(txt)
-                txt = f'A {nOszlopkoz-i}/{nOszlopkoz}. oszl. Z_e={Z_e:.2f} árameloszlás {abs(Ig_ratio):.2f}, '
+                txt = f'A {nOszlopkoz-i}/{nOszlopkoz}. oszl. Z_e={Z_e:.2f} árameloszlás' +\
+                f' {abs(Ig_ratio):.2f}, '
                 txt2 = f'feszültség: {abs(U_e):.2f} kV, Rsz áram: {I_sz:.2f} kA.'
 
                 Z_e = replusZ(Z_e, R_sz) + Z_g
