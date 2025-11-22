@@ -1,5 +1,6 @@
 #!/usr/bin/env python3 
 import math, cmath, numpy
+import pandas as texout
 
 DEBUG=True
 #DEBUG=False
@@ -49,14 +50,15 @@ class cTower():
         self.Rgrr = 0         #resistivity of earth return in Ω/km
         self.Dphstw = 10        #distance of ground and static wire in meter
         self.Dgrr = 1000 #depth of earth return current in meter
-        self.Zstw = 0           #self impedance of static wire ground loop Ω/span
-        self.Zphw =0            #sefl ipmedance of phase wire ground loop Ω/span
-        self.Zphstmut = 0       #mutual impedance of phase and static to ground loops Ω/span 
-        self.Ugrphw = None
+        self.Zstw = None        #self impedance of static wire ground loop Ω/span
+        self.Zphw = None        #sefl ipmedance of phase wire ground loop Ω/span
+        self.Zphstmut = None    #mutual impedance of phase and static to ground loops Ω/span 
+        self.Ustphw = None
+        self.Uphstw = None
         self.Ue = None 
         self.Ze = None
-        self.Igrwmut = None
-        self.Igrwcond = None
+        self.Istwmut = None
+        self.Istwcond = None
         self.calcInternalValues()
     def calcInternalValues(self):
         self.Zstw =  self.Dtowers * complex(
@@ -65,21 +67,25 @@ class cTower():
             self.Rphw, selfReactance(self.Dgrr, GMRfromA(self.Aphw))) 
         self.Zphstmut = self.Dtowers * complex(
             self.Rgrr, mutReactance(self.Dgrr, self.Dphstw))
-        self.Ugrphw = self.Zphstmut * self.Izref
+        self.Ustphw = self.Zphstmut * self.Izref
     def calculateBackward(self, next):
         if next is None:
             self.Ze = self.Zstw + self.Rsubstgr + self.Rgrr 
-            self.Ue = self.Ugrphw
+            self.Ue = self.Ustphw
             return
         self.Ze = self.Zstw + self.Rsubstgr + replusZ(self.Rtowergr, next.Ze)
-        self.Ue = self.Ugrphw + next.Ue * self.Rtowergr / (self.Rtowergr + next.Ze)
+        self.Ue = self.Ustphw + next.Ue * self.Rtowergr / (self.Rtowergr + next.Ze)
     def calculateForward(self, previous):
-        currRatio, void = currentRatio(self.Zgrw, self.Rtowergr)
-        self.Igrwcond = self.Izref * currRatio
+        currRatio, void = currentRatio(self.Ze, self.Rtowergr)
         if previous is None:
-            self.Igrwmut = self.Ue / self.Rtowergr
+            self.Istwcond = self.Izref * currRatio
+            self.Istwmut = self.Ue / self.Rtowergr
+            self.Uphstw = self.Zphstmut * (self.Istwcond + self.Istwmut)
             return
-        
+        self.Istwcond = previous.Istwcond * currRatio
+        currRatio, void = currentRatio(self.Ze, self.Rtowergr)
+        self.Istwmut = currRatio * previous.Istwmut + self.Ue / (self.Rtowergr + self.Ze)
+        self.Uphstw = self.Zphstmut * (self.Istwcond + self.Istwmut)
 
 def makePowerLine(towerCount):
     towerList = []              #Towers and spans are counted from the faulty ones. 
@@ -106,17 +112,22 @@ def main():
     towerList[-1].Dtowers = 0.1  #Fist tower is closer to substation than others. 
     towerList[-1].calcInternalValues()  #Fist tower is closer to substation than others. 
     calculateUeZe(towerList)
+    calculateIgrw(towerList)
 
     #DEBUG part, should be deleted in production
-    headertxt = (f'{"#":>3}{"Táv [m]":>7}{"Zshw [Ω]":>13}{"Zphw [Ω]":>13}'
-        f'{"Zmutual [Ω]":>13}{"Umutual [V]":>12}{"Ze [Ω]":>7}{"Ue [V]":>7}')
+    headertxt = (f'{"#":>3}{"Táv [m]":>8}{"Zshw [Ω]":>13}{"Zphw [Ω]":>13}'
+        f'{"Zmutual [Ω]":>13}{"Umutual [V]":>12}{"Ze [Ω]":>7}{"Ue [V]":>7}'
+        f'{"Istwmut [kA]":>13}{"Istwcon [kA]":>13}{"Ist [kA]":>9}'
+        f'{"Uphstw [V]":>11}')
     print(headertxt)
     for idx, tower in enumerate(towerList):
         towertxt = (f'{idx:3d}' 
-            f'{tower.Dtowers*1000:7.0f}{tower.Zstw:13.2f}'
+            f'{tower.Dtowers*1000:8.0f}{tower.Zstw:13.2f}'
             f'{tower.Zphw:13.2f}' 
-            f'{tower.Zphstmut:13.2f}{abs(tower.Ugrphw)*1000:12.2f}'
-            f'{abs(tower.Ze):7.2f}{abs(tower.Ue):7.2f}')
+            f'{tower.Zphstmut:13.2f}{abs(tower.Ustphw)*1000:12.2f}'
+            f'{abs(tower.Ze):7.2f}{abs(tower.Ue):7.2f}'
+            f'{tower.Istwmut:13.2f}{tower.Istwcond:13.2f}{abs(tower.Istwmut+tower.Istwcond):9.2f}'
+            f'{abs(tower.Uphstw)*1000:11.2f}')
         print(towertxt)
 
 
