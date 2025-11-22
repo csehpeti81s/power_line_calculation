@@ -36,35 +36,89 @@ def quadraticFormula(a, b, c):
     x2=(-b - cmath.sqrt(D))/(2*a)
     return (x1, x2)
 
-class oszlopkoz():
+class cTower():
     def __init__(self):
-        self.Dpoles = 0.300     #lengt in kilometers between this and previous poles
-        self.Rpolegr = 5        #earth resistance of the current pole in Ω
+        self.Izref = 10         #reference value of earth fault current in kA 
+        self.Dtowers = 0.300     #lengt in kilometers between this and previous poles
+        self.Rtowergr = 5        #earth resistance of the current pole in Ω
         self.Rsubstgr = 0.05    #earth resistance of the substation in Ω
         self.Astw = 95 + 50     #cross section of the static wire in mm2
         self.Aphw = 250 + 40    #cross section of the phase wire in mm2
-        self.Rphw = 0.1154      #resistivity of the phase wire in Ω
-        self.Rstw = 0.2992      #resistivity of the static wire in Ω
+        self.Rphw = 0.1154      #resistivity of the phase wire in Ω/km
+        self.Rstw = 0.2992      #resistivity of the static wire in Ω/km
+        self.Rgrr = 0         #resistivity of earth return in Ω/km
         self.Dphstw = 10        #distance of ground and static wire in meter
-        self.Zstw = 0           #self impedance of static wire ground loop
-        self.Zphw =0            #sefl ipmedance of phase wire ground loop
-        self.Zphstmut = 0       #mutual impedance of phase and static to ground loops 
-        self.calculateInternalValues()
-    def calculateInternalValues(self):
-        self.Zstw = self.Dpoles * complex(self.Rstw, selfReactance(1000, GMRfromA(self.Astw)))  
-        self.Zphw = self.Dpoles * complex(self.Rphw, selfReactance(1000, GMRfromA(self.Aphw)))  
-        self.Zphstmut = self.Dpoles * complex(0, mutReactance(1000, self.Dphstw))
-    def calculataBackward(self, next):
-        pass
+        self.Dgrr = 1000 #depth of earth return current in meter
+        self.Zstw = 0           #self impedance of static wire ground loop Ω/span
+        self.Zphw =0            #sefl ipmedance of phase wire ground loop Ω/span
+        self.Zphstmut = 0       #mutual impedance of phase and static to ground loops Ω/span 
+        self.Ugrphw = None
+        self.Ue = None 
+        self.Ze = None
+        self.Igrwmut = None
+        self.Igrwcond = None
+        self.calcInternalValues()
+    def calcInternalValues(self):
+        self.Zstw =  self.Dtowers * complex(
+            self.Rstw, selfReactance(self.Dgrr, GMRfromA(self.Astw)))  
+        self.Zphw = self.Dtowers * complex(
+            self.Rphw, selfReactance(self.Dgrr, GMRfromA(self.Aphw))) 
+        self.Zphstmut = self.Dtowers * complex(
+            self.Rgrr, mutReactance(self.Dgrr, self.Dphstw))
+        self.Ugrphw = self.Zphstmut * self.Izref
+    def calculateBackward(self, next):
+        if next is None:
+            self.Ze = self.Zstw + self.Rsubstgr + self.Rgrr 
+            self.Ue = self.Ugrphw
+            return
+        self.Ze = self.Zstw + self.Rsubstgr + replusZ(self.Rtowergr, next.Ze)
+        self.Ue = self.Ugrphw + next.Ue * self.Rtowergr / (self.Rtowergr + next.Ze)
     def calculateForward(self, previous):
-        pass
+        currRatio, void = currentRatio(self.Zgrw, self.Rtowergr)
+        self.Igrwcond = self.Izref * currRatio
+        if previous is None:
+            self.Igrwmut = self.Ue / self.Rtowergr
+            return
+        
+
+def makePowerLine(towerCount):
+    towerList = []              #Towers and spans are counted from the faulty ones. 
+    for i in range(towerCount):
+        tower = cTower()
+        towerList.append(tower) 
+    return towerList 
+
+def calculateUeZe(towerList):
+    nextTower = None
+    for tower in reversed(towerList):
+        tower.calculateBackward(nextTower)
+        nextTower = tower
+
+def calculateIgrw(towerList):
+    previousTower = None
+    for tower in towerList:
+        tower.calculateForward(previousTower)
+        previousTower = tower
 
 def main():
-    polesCount = 5     #Number of poles in the line included the faulty one. 
-    ok = oszlopkoz()
-    oktxt = ( f'Táv: {ok.Dpoles*1000:.0f} m, Zgrw: {ok.Zstw:5.2f} Ω, Zphw: {ok.Zphw:5.2f} Ω, ' 
-        f'Zphstmut: {ok.Zphstmut:2.0f} Ω')
-    print(oktxt)
+    towerCount = 40     #Number of poles in the line included the faulty one. 
+    towerList = makePowerLine(towerCount)
+    towerList[-1].Dtowers = 0.1  #Fist tower is closer to substation than others. 
+    towerList[-1].calcInternalValues()  #Fist tower is closer to substation than others. 
+    calculateUeZe(towerList)
+
+    #DEBUG part, should be deleted in production
+    headertxt = (f'{"#":>3}{"Táv [m]":>7}{"Zshw [Ω]":>13}{"Zphw [Ω]":>13}'
+        f'{"Zmutual [Ω]":>13}{"Umutual [V]":>12}{"Ze [Ω]":>7}{"Ue [V]":>7}')
+    print(headertxt)
+    for idx, tower in enumerate(towerList):
+        towertxt = (f'{idx:3d}' 
+            f'{tower.Dtowers*1000:7.0f}{tower.Zstw:13.2f}'
+            f'{tower.Zphw:13.2f}' 
+            f'{tower.Zphstmut:13.2f}{abs(tower.Ugrphw)*1000:12.2f}'
+            f'{abs(tower.Ze):7.2f}{abs(tower.Ue):7.2f}')
+        print(towertxt)
+
 
 def tst():
     I_zref = complex(10,0)
