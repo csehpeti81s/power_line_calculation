@@ -4,6 +4,7 @@ import pandas as texout
 
 DEBUG=True
 #DEBUG=False
+ONE_LINE_CALCULATION = True
 
 def replusZ(Z1, Z2):
     return (Z1*Z2)/(Z1+Z2)
@@ -47,28 +48,31 @@ class cPowerLine():
         self.Ustwline = None
         self.Uz = None
         self.Zz = None
-        self.Iz = None
+        self.Iz = self.Izref
         self.towerList = None
         self.makePowerLine(towerCount)
+        for i in range(5):
+            self.updatePowerLine()
+    def updatePowerLine(self):
         self.updateTowerInternalCalculatedValues()
         self.calculateUeZe()
         self.calculateIgrw()
         self.calculateLoopVoltages()
+        Izprev = self.Iz
         self.calculateShortCircuitCurrent()
         self.updateShortCircuitValuesToIz()
-        self.updateTowerInternalCalculatedValues()
-        self.calculateUeZe()
-        self.calculateIgrw()
-        self.calculateLoopVoltages()
-        self.calculateShortCircuitCurrent()
+        dbgmsg = (f'{"N":>5} {"Uz":>15} {"Zz":>15} {"Izprev":>15} {"Iz":>15} \n'
+            f'{len(self.towerList):5d} {self.Uz:15.2f} {self.Zz:15.2f} '
+            f'{Izprev:15.2f} {self.Iz:15.2f}')
+        print(dbgmsg)
     def makePowerLine(self, towerCount):
         self.towerList = []              #Towers and spans are counted from the faulty ones. 
         for i in range(towerCount):
             tower = cTower()
             tower.Izref = self.Izref
             self.towerList.append(tower) 
-        self.towerList[-1].Dtowers = 0.1  #Fist tower is closer to substation than others. 
-        self.towerList[0].Dgrr = self.towerList[0].Dgrr / 2 #Depth is half in the faulty tower span. 
+        self.towerList[-1].Dtowers = 10  #Fist tower is closer to substation than others. 
+        #self.towerList[0].Dgrr = self.towerList[0].Dgrr / 2 #Depth is half at tower 0. 
     def updateTowerInternalCalculatedValues(self):
         for tower in self.towerList:
             tower.calcInternalValues()
@@ -87,6 +91,7 @@ class cPowerLine():
             tower.calculateSpanVoltages()
         self.Uphwline = complex(0,0)
         self.Ustwline = complex(0,0)
+        self.Ustwline = self.Ustwline + self.towerList[-1].Istwsum * self.towerList[-1].Rsubstgr
         for tower in self.towerList:
             self.Uphwline = self.Uphwline + tower.Uphwspan
             self.Ustwline = self.Ustwline + tower.Ustwspan
@@ -97,12 +102,12 @@ class cPowerLine():
     def updateShortCircuitValuesToIz(self):
         for tower in self.towerList:
             tower.Izref = self.Iz
-    def printIntermediateResults(self):
+    def printIntermediateResultsOfTowers(self):
         headertxt = (f'{"#":>3}{"Táv":>4}'
             f'{"Zstw":>13}{"Zphw":>13}'
             f'{"Zmut":>13}{"Ustphw/k":>13}'
             f'{"Ze":>13}{"Ue/k":>13}'
-            f'{"Istwmut/k":>13}{"Istwcon/k":>13}{"Ist/k":>13}'
+            f'{"Istwind/k":>13}{"Istwcon/k":>13}{"Ist/k":>13}'
             f'{"Uphstw/k":>16}{"Uphwspan/k":>16}{"Ustwspan/k":>16}')
         msgtxt = headertxt + "\n"
         for idx, tower in enumerate(self.towerList):
@@ -110,7 +115,8 @@ class cPowerLine():
                     f'{tower.Zstw:13.2f}{tower.Zphw:13.2f}' 
                     f'{tower.Zphstmut:13.2f}{(tower.Ustphw):13.2f}'
                     f'{(tower.Ze):13.2f}{(tower.Ue):13.2f}'
-                    f'{tower.Istwmut:13.2f}{tower.Istwcond:13.2f}{(tower.Istwmut+tower.Istwcond):13.2f}'
+                    f'{tower.Istwind:13.2f}{tower.Istwcond:13.2f}'
+                    f'{(tower.Istwind+tower.Istwcond):13.2f}'
                     f'{(tower.Uphstw):16.2f}'
                     f'{tower.Uphwspan:16.2f}{tower.Ustwspan:16.2f}' )
             msgtxt = msgtxt + towertxt + "\n"
@@ -147,7 +153,7 @@ class cTower():
         self.Uphstw = None
         self.Ue = None 
         self.Ze = None
-        self.Istwmut = None
+        self.Istwind = None
         self.Istwcond = None
         self.Istwsum = None
         self.Ustwspan = None        #Sum voltage on static wire
@@ -161,36 +167,34 @@ class cTower():
             self.Rgrr, mutReactance(self.Dgrr, self.Dphstw))
         self.Ustphw = self.Zphstmut * self.Izref
     def calculateZeUe(self, next):
-        if next is None:
-            self.Ze = self.Zstw + self.Rsubstgr + self.Rgrr 
+        if next is None:    #This case I'am next to the substation.
+            self.Ze = self.Zstw + self.Rsubstgr  
             self.Ue = self.Ustphw
             return
-        self.Ze = self.Zstw + self.Rsubstgr + replusZ(self.Rtowergr, next.Ze)
+        self.Ze = self.Zstw + replusZ(self.Rtowergr, next.Ze)
         self.Ue = self.Ustphw + next.Ue * self.Rtowergr / (self.Rtowergr + next.Ze)
     def calculateShWCurrent(self, previous):
         currRatio, void = currentRatio(self.Ze, self.Rtowergr)
-        if previous is None:
+        if previous is None:    #Means I'am at the faulty tower. 
             self.Istwcond = self.Izref * currRatio
-            self.Istwmut = self.Ue / self.Rtowergr
-            self.Istwsum = (self.Istwcond + self.Istwmut)
-            self.Uphstw = self.Zphstmut * (self.Istwcond + self.Istwmut)
+            self.Istwind = self.Ue / (self.Rtowergr + self.Ze)
+            self.Istwsum = (self.Istwcond + self.Istwind)
+            self.Uphstw = self.Zphstmut * self.Istwsum
             return
         self.Istwcond = previous.Istwcond * currRatio
-        currRatio, void = currentRatio(self.Ze, self.Rtowergr)
-        self.Istwmut = currRatio * previous.Istwmut + self.Ue / (self.Rtowergr + self.Ze)
-        self.Istwsum = (self.Istwcond + self.Istwmut)
+        #currRatio, void = currentRatio(self.Ze, self.Rtowergr)
+        self.Istwind = currRatio * previous.Istwind + self.Ue / (self.Rtowergr + self.Ze)
+        self.Istwsum = (self.Istwcond + self.Istwind)
         self.Uphstw = self.Zphstmut * (self.Istwsum)
     def calculateSpanVoltages(self):
         #positive values are in the Iz direction
         self.Ustwspan = self.Istwsum * self.Zstw - self.Izref * self.Zphstmut
         self.Uphwspan = self.Izref * self.Zphw - self.Istwsum * self.Zphstmut
 
-
-
 def exportResultsToLatex(towerList):
     towerid = []
     towerdistance = []
-    Istwmut = []
+    Istwind = []
     Istwcond = []
     Istwsum = []
     Ue = []
@@ -200,23 +204,15 @@ def exportResultsToLatex(towerList):
     for idx, tower in enumerate(towerList):
         towerid.append(idx)
         towerdistance.append(int(tower.Dtowers*1000))
-        Istwmut.append(abs(tower.Istwmut))
+        Istwind.append(abs(tower.Istwind))
         Istwcond.append(abs(tower.Istwcond))
         Istwsum.append(abs(tower.Istwsum))
-        Ze.append(abs(tower.Ze))
-        Ue.append(abs(tower.Ue))
-        Uphspan.append(abs(tower.Uphwspan))
-        Ustspan.append(abs(tower.Ustwspan))
     data = {
             "Oszlop": tuple(towerid),
             "Oszlopköz": tuple(towerdistance),
-            "Ig indukt.": tuple(Istwmut),
             "Ig kond.": tuple(Istwcond),
-            "Ig szumma": tuple(Istwsum),
-            "Ue": tuple(Ue),
-            "Ze": tuple(Ze),
-            "Ustwspan": tuple(Ustspan),
-            "Uphwspan": tuple(Uphspan)
+            "Ig indukt.": tuple(Istwind),
+            "Ig": tuple(Istwsum),
         }
     formatteddata = texout.DataFrame(data)
     latextxt = formatteddata.to_latex(
@@ -227,20 +223,56 @@ def exportResultsToLatex(towerList):
         label="tab:tavvezetek_eredmenyek"
         )
     print(latextxt)
-    with open("tavvezetekpy.tex", "w") as f:
+    with open(f'./out/tavvezetek{len(towerList):03d}py.tex', "w") as f:
         f.write(latextxt)
 
-def powerLineCalculation(towerCount):
+def exportLineResultsToLatex(data, maxTowerCount):
+    formatteddata = texout.DataFrame(data)
+    latextxt = formatteddata.to_latex(
+        index = False,
+        position = "h",
+        float_format="%.2f",
+        caption="Távvezeték zárlati áramok nagysága és eloszlása",
+        label="tab:tavvezetek_eredmenyek"
+        )
+    print(latextxt)
+    with open(f'./out/sorozat{maxTowerCount:03d}py.tex', "w") as f:
+        f.write(latextxt)
+    
+
+def calculateSinglePowerLine(towerCount):
     powerLine = cPowerLine(towerCount)
-    print("Most írom ki a szövegfájlba az adatokat")
-    #powerLine.printIntermediateResults()
-    #powerLine.printIntermediateResultsOfLine()
-    #exportResultsToLatex(powerLine.towerList)
+    powerLine.printIntermediateResultsOfTowers()
+    powerLine.printIntermediateResultsOfLine()
+    exportResultsToLatex(powerLine.towerList)
+
+def calculateMultiplePowerLines(maxTowerCount):
+    towerCounts = []
+    lineLengths = []
+    Uz = []
+    Zz = []
+    Iz = []
+    for towerCount in range(maxTowerCount):
+        powerLine = cPowerLine(towerCount+1)
+        towerCounts.append(len(powerLine.towerList))
+        lineLengths.append(0)
+        Uz.append(abs(powerLine.Uz))
+        Iz.append(abs(powerLine.Iz))
+    data = {
+        "Oszlopszám" : tuple(towerCounts),
+        "Vonalhossz": tuple(lineLengths),
+        "Uz": tuple(Uz),
+        "Iz": tuple(Iz)
+    }
+    exportLineResultsToLatex(data, maxTowerCount)
     
 def main():
-    towerCount = 40  #Number of poles in the line included the faulty one. 
-    for towerCount in range(40):
-        powerLineCalculation(towerCount+1)
+    if ONE_LINE_CALCULATION:
+        #for towerCount in (1,1):
+        calculateSinglePowerLine(1)
+        return    
+    calculateMultiplePowerLines(40)
+    
 
 if __name__=="__main__":
     main()
