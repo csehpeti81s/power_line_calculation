@@ -42,7 +42,7 @@ class cPowerLine():
     def __init__(self, towerCount):
         self.U = 76.21
         self.Izsubst = complex(0, -31.5)
-        self.Izref = self.Izsubst
+        self.Izref = complex(0,-10) #self.Izsubst
         self.Zmh = self.U /self.Izsubst
         self.Uphwline = None
         self.Ustwline = None
@@ -51,10 +51,11 @@ class cPowerLine():
         self.Iz = self.Izref
         self.towerList = None
         self.makePowerLine(towerCount)
+        self.updateTowerInternalCalculatedValues()
         for i in range(5):
             self.updatePowerLine()
+            self.printIntermediateResultsOfTowers()
     def updatePowerLine(self):
-        self.updateTowerInternalCalculatedValues()
         self.calculateUeZe()
         self.calculateIgrw()
         self.calculateLoopVoltages()
@@ -87,12 +88,11 @@ class cPowerLine():
             tower.calculateShWCurrent(previousTower)
             previousTower = tower
     def calculateLoopVoltages(self):
-        for tower in self.towerList:
-            tower.calculateSpanVoltages()
         self.Uphwline = complex(0,0)
         self.Ustwline = complex(0,0)
         self.Ustwline = self.Ustwline + self.towerList[-1].Istwsum * self.towerList[-1].Rsubstgr
         for tower in self.towerList:
+            tower.calculateSpanVoltages()
             self.Uphwline = self.Uphwline + tower.Uphwspan
             self.Ustwline = self.Ustwline + tower.Ustwspan
         self.Uz = self.Uphwline + self.Ustwline
@@ -108,7 +108,8 @@ class cPowerLine():
             f'{"Zmut":>13}{"Ustphw/k":>13}'
             f'{"Ze":>13}{"Ue/k":>13}'
             f'{"Istwind/k":>13}{"Istwcon/k":>13}{"Ist/k":>13}'
-            f'{"Uphstw/k":>16}{"Uphwspan/k":>16}{"Ustwspan/k":>16}')
+            f'{"Uphstw/k":>16}{"Uphwspan/k":>16}{"Ustwspan/k":>16}'
+            f'{"Izreftwr":>16}')
         msgtxt = headertxt + "\n"
         for idx, tower in enumerate(self.towerList):
             towertxt = (f'{idx:3d}{tower.Dtowers*1000:4.0f}'
@@ -118,9 +119,10 @@ class cPowerLine():
                     f'{tower.Istwind:13.2f}{tower.Istwcond:13.2f}'
                     f'{(tower.Istwind+tower.Istwcond):13.2f}'
                     f'{(tower.Uphstw):16.2f}'
-                    f'{tower.Uphwspan:16.2f}{tower.Ustwspan:16.2f}' )
+                    f'{tower.Uphwspan:16.2f}{tower.Ustwspan:16.2f}'
+                    f'{tower.Izref:16.2f}' )
             msgtxt = msgtxt + towertxt + "\n"
-        with open("towermsg.txt", "w") as f:
+        with open("towermsg.txt", "a") as f:
             f.write(msgtxt)
     def printIntermediateResultsOfLine(self):
         msgtxt = (f'{"Twr c":>6}{"Iz/k":>13}{"Ustwline":>13}{"Uphwline":>16}'
@@ -165,8 +167,8 @@ class cTower():
             self.Rphw, selfReactance(self.Dgrr, GMRfromA(self.Aphw))) 
         self.Zphstmut = self.Dtowers * complex(
             self.Rgrr, mutReactance(self.Dgrr, self.Dphstw))
-        self.Ustphw = self.Zphstmut * self.Izref
     def calculateZeUe(self, next):
+        self.Ustphw = self.Zphstmut * self.Izref
         if next is None:    #This case I'am next to the substation.
             self.Ze = self.Zstw + self.Rsubstgr  
             self.Ue = self.Ustphw
@@ -175,6 +177,7 @@ class cTower():
         self.Ue = self.Ustphw + next.Ue * self.Rtowergr / (self.Rtowergr + next.Ze)
     def calculateShWCurrent(self, previous):
         currRatio, void = currentRatio(self.Ze, self.Rtowergr)
+        print("Current ratio {:5.2f}".format(currRatio))
         if previous is None:    #Means I'am at the faulty tower. 
             self.Istwcond = self.Izref * currRatio
             self.Istwind = self.Ue / (self.Rtowergr + self.Ze)
@@ -189,27 +192,46 @@ class cTower():
     def calculateSpanVoltages(self):
         #positive values are in the Iz direction
         self.Ustwspan = self.Istwsum * self.Zstw - self.Izref * self.Zphstmut
+        dbgtxt = (f'Ustwspan = Istw * Zstw - Izref * Zphstmut \n'
+            f'{self.Ustwspan:16.2f}={self.Istwsum:16.2f}*{self.Zstw:16.2f}'
+            f'-{self.Izref:16.2f}*{self.Zphstmut:16.2f}')
+        #print(dbgtxt)
         self.Uphwspan = self.Izref * self.Zphw - self.Istwsum * self.Zphstmut
+        dbgtxt = (f'Uphwspan = Izref * Zphw - Istw * Zphstmut \n'
+            f'{self.Uphwspan:16.2f}={self.Izref:16.2f}*{self.Zphw:16.2f}'
+            f'-{self.Istwsum:16.2f}*{self.Zphstmut:16.2f}')
+        dbgtxt = (f'{abs(self.Ustwspan/self.Uphwspan):5.2f}'
+            f'{abs(self.Ustwspan/self.Izref):5.2f}'
+            f'{abs(self.Uphwspan/self.Izref):5.2f}'
+            f'{abs((self.Uphwspan+self.Ustwspan)/self.Izref):5.2f}'
+            )
+        print(dbgtxt)
+        #print('Uz= {}'.format(self.Uphwspan+self.Ustwspan))
 
-def exportResultsToLatex(towerList):
+def exportTowerResultsToLatex(towerList):
     towerid = []
     towerdistance = []
+    Zphw = []
+    Zstw = []
+    Zstphw = []
     Istwind = []
     Istwcond = []
     Istwsum = []
-    Ue = []
-    Ze = []
-    Uphspan = []
-    Ustspan = []
     for idx, tower in enumerate(towerList):
         towerid.append(idx)
         towerdistance.append(int(tower.Dtowers*1000))
+        Zphw.append(abs(tower.Zphw))
+        Zstw.append(abs(tower.Zstw))
+        Zstphw.append(abs(tower.Zphstmut))
         Istwind.append(abs(tower.Istwind))
         Istwcond.append(abs(tower.Istwcond))
         Istwsum.append(abs(tower.Istwsum))
     data = {
             "Oszlop": tuple(towerid),
             "Oszlopköz": tuple(towerdistance),
+            "Zphw": tuple(Zphw),
+            "Zstw": tuple(Zstw),
+            "Zstphw": tuple(Zstphw),
             "Ig kond.": tuple(Istwcond),
             "Ig indukt.": tuple(Istwind),
             "Ig": tuple(Istwsum),
@@ -244,7 +266,7 @@ def calculateSinglePowerLine(towerCount):
     powerLine = cPowerLine(towerCount)
     powerLine.printIntermediateResultsOfTowers()
     powerLine.printIntermediateResultsOfLine()
-    exportResultsToLatex(powerLine.towerList)
+    exportTowerResultsToLatex(powerLine.towerList)
 
 def calculateMultiplePowerLines(maxTowerCount):
     towerCounts = []
