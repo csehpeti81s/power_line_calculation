@@ -250,29 +250,20 @@ def exportTowerResultsToLatex(towerList):
             "Ig indukt.": tuple(Istwind),
             "Ig": tuple(Istwsum),
         }
-    formatteddata = texout.DataFrame(data)
-    latextxt = formatteddata.to_latex(
-        index = False,
-        position = "h",
-        float_format="%.2f",
-        caption="Távvezeték zárlati áramok nagysága és eloszlása",
-        label="tab:tavvezetek_eredmenyek"
-        )
-    print(latextxt)
-    with open(f'./out/tavvezetek{len(towerList):03d}py.tex', "w") as f:
-        f.write(latextxt)
+    filename = (f'./out/tavvezetek{len(towerList):03d}py.tex')
+    writeToLatex(data, filename)
 
-def exportLineResultsToLatex(data, maxTowerCount):
+def writeToLatex(data, filename):
     formatteddata = texout.DataFrame(data)
     latextxt = formatteddata.to_latex(
         index = False,
         position = "h",
         float_format="%.2f",
-        caption="Távvezeték zárlati áramok nagysága és eloszlása",
-        label="tab:tavvezetek_eredmenyek"
-        )
+        #caption="Távvezeték zárlati áramok nagysága és eloszlása",
+        #label="tab:tavvezetek_eredmenyek"
+        ).replace(".", ",")
     print(latextxt)
-    with open(f'./out/sorozat{maxTowerCount:03d}py.tex', "w") as f:
+    with open(filename, "w") as f:
         f.write(latextxt)
     
 def calculateSinglePowerLine(towerCount):
@@ -281,14 +272,16 @@ def calculateSinglePowerLine(towerCount):
     powerLine.printIntermediateResultsOfLine()
     exportTowerResultsToLatex(powerLine.towerList)
 
-def calculateMultiplePowerLines(maxTowerCount):
+def calculateMultiplePowerLines():
+    towerSet = tuple(range(25)) + (49, 99, 199)    #.append(100).append(200) 
     towerCounts = []
     lineLengths = []
     Uz = []
     Igmax = []
     Igmaxtwrid = []
     Iz = []
-    for towerCount in range(maxTowerCount):
+    Izrel = []
+    for towerCount in towerSet:
         powerLine = cPowerLine(towerCount+1)
         towerCounts.append(len(powerLine.towerList))
         lineLengths.append(powerLine.lineLength)
@@ -296,15 +289,18 @@ def calculateMultiplePowerLines(maxTowerCount):
         Igmaxtwrid.append(powerLine.Igmaxtwrid)
         Uz.append(abs(powerLine.Uz))
         Iz.append(abs(powerLine.Iz))
+        Izrel.append(abs(powerLine.Iz) / abs(powerLine.Izsubst))
     data = {
         "Oszlopszám" : tuple(towerCounts),
         "Vonalhossz": tuple(lineLengths),
         "Igmax": tuple(Igmax),
         "Igmax oszl": tuple(Igmaxtwrid),
         "Uz": tuple(Uz),
-        "Iz": tuple(Iz)
+        "Iz": tuple(Iz),
+        "Izrel": tuple(Izrel),
     }
-    exportLineResultsToLatex(data, maxTowerCount)
+    filename = f'./out/sorozat.tex'
+    writeToLatex(data, filename)
     
 def main():
     if ONE_LINE_CALCULATION:
@@ -315,7 +311,7 @@ def main():
         for towerCount in (towerset):
             calculateSinglePowerLine(towerCount)
         return    
-    calculateMultiplePowerLines(40)
+    calculateMultiplePowerLines()
     
 
 if __name__=="__main__":
