@@ -1,8 +1,8 @@
 #!/usr/bin/env python3 
-import math, cmath, numpy
+import cmath
 import pandas as texout
 
-DEBUG=False
+DEBUG=False     #To turn on/off debug messages. 
 ONE_LINE_CALCULATION = False
 
 def replusZ(Z1, Z2):
@@ -29,19 +29,19 @@ def quadratic_formula_roots(a, b, c):
 
 class PowerLine():
     def __init__(self, tower_count):
-        self.U = 76.21
-        self.Izsubst = complex(0, -31.5)
-        self.Izref = self.Izsubst
-        self.Zmh = self.U /self.Izsubst
+        self.U = 76.21                      #Phase voltage of 132 kV
+        self.Izsubst = complex(0, -31.5)    #Substation short circuit current
+        self.Izref = self.Izsubst           #Reference short circuit current.
+        self.Zmh = self.U /self.Izsubst     
         self.Uphwline = None
         self.Ustwline = None
-        self.Uz = None
-        self.Zz = None
-        self.Iz = self.Izref
-        self.line_length = 0
-        self.towers = None
-        self.Igmax = 0
-        self.Igmaxtwrid = 0
+        self.Uz = None          #Short circuit voltage of power line
+        self.Zz = None          #Short circuit impedance of power line
+        self.Iz = self.Izref    #Calculated short circuit current.
+        self.line_length = 0    #Distance from substation to faulty tower
+        self.towers = None      #To store Tower objects
+        self.Igmax = 0          #Maximum static wire current
+        self.Igmaxtwrid = 0     #Index of span with max. static wire current
         self.create_powerline(tower_count)
         self.calculate_spans_self_and_mutual_impedances()
         for i in range(2):  
@@ -94,8 +94,9 @@ class PowerLine():
                 self.Igmax = abs(tower.Istwsum)
                 self.Igmaxtwrid = idx
     def set_short_circuit_current_for_towers(self):
+        self.Izref = self.Iz
         for tower in self.towers:
-            tower.Izref = self.Iz
+            tower.Izref = self.Izref
     def print_towers_intermediate_results_to_file(self):
         msgtxt = (f'{"#":>3}{"Táv":>4}'
             f'{"Zstw":>13}{"Zphw":>13}'
