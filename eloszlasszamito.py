@@ -3,7 +3,7 @@ import cmath
 import pandas as texout
 
 DEBUG=False     #To turn on/off debug messages. 
-ONE_LINE_CALCULATION = False
+PRINT_INTERMEDIATE_RESULTS_TO_TXT_FILE=True
 
 def replusZ(Z1, Z2):
     return (Z1*Z2)/(Z1+Z2)
@@ -29,16 +29,16 @@ def quadratic_formula_roots(a, b, c):
 
 class PowerLine():
     def __init__(self, tower_count):
-        self.U = 76.21                      #Phase voltage of 132 kV
+        self.U = 76.21                      #Phase voltage of the power line.
         self.Izsubst = complex(0, -31.5)    #Substation short circuit current
         self.Izref = self.Izsubst           #Reference short circuit current.
-        self.Zmh = self.U /self.Izsubst     
+        self.Zgrid = self.U /self.Izsubst   #Impedance of grid 
         self.Uphwline = None
         self.Ustwline = None
         self.Uz = None          #Short circuit voltage of power line
         self.Zz = None          #Short circuit impedance of power line
         self.Iz = self.Izref    #Calculated short circuit current.
-        self.line_length = 0    #Distance from substation to faulty tower
+        self.line_length = 0    #To calculate overall line lenght.
         self.towers = None      #To store Tower objects
         self.Igmax = 0          #Maximum static wire current
         self.Igmaxtwrid = 0     #Index of span with max. static wire current
@@ -46,7 +46,7 @@ class PowerLine():
         self.calculate_spans_self_and_mutual_impedances()
         for i in range(2):  
             #First pass to calculate real Iz.
-            #Second pass to calculate real curents and voltages.
+            #Second pass to calculate real curents distribution. 
             self.set_short_circuit_current_for_towers()
             self.calculate_towers_thevenin_voltages_and_reactances()
             self.calculate_spans_static_wire_currents()
@@ -60,9 +60,9 @@ class PowerLine():
         for i in range(tower_count):
             tower = TowerAndSpan()
             self.towers.append(tower) 
-        #Fist tower is closer to substation than others. 
+        #Fist tower to substation span can be shorter than others. 
         self.towers[-1].Dtowers = 0.10  
-        #To set earth return depth half at tower 0. 
+        #To set earth return depth half at span of faulty tower. 
         #self.towers[0].Dgrr = self.towers[0].Dgrr / 2 
     def calculate_spans_self_and_mutual_impedances(self):
         for tower in self.towers:
@@ -84,7 +84,7 @@ class PowerLine():
             self.Uz =self.Uz + tower.Uspan
     def calculate_short_circuit_current(self):
         self.Zz = self.Uz / self.Iz
-        self.Iz = self.U / (self.Zz + self.Zmh )
+        self.Iz = self.U / (self.Zz + self.Zgrid )
     def calculate_line_length_static_wire_max_current_and_location(self):
         self.line_length = 0
         self.Igmax = 0
@@ -117,7 +117,7 @@ class PowerLine():
                     f'{(tower.Uphstw):16.2f}'
                     f'{tower.Uspan:16.2f}{tower.Izref:16.2f}' 
                     f'\n')
-        with open("towermsg.txt", "w") as f:
+        with open("towermsg.txt", 'w') as f:
             f.write(msgtxt)
     def print_line_intermediate_results_to_file(self):
         msgtxt = (f'{"Twr c":>6}{"Izref":>13}'
@@ -133,7 +133,7 @@ class PowerLine():
 class TowerAndSpan():
     def __init__(self):
         self.Izref=None     #reference value of earth fault current in kA 
-        self.Dtowers=0.3    #span lengt in kilometers
+        self.Dtowers=0.3    #general span lengt in kilometers
         self.Rtowergr=5     #earth resistance of the current pole in ohm
         self.Rsubstgr=0.05  #earth resistance of the substation in ohm
         self.Astw=95+50     #cross section of the static wire in mm2
@@ -148,14 +148,14 @@ class TowerAndSpan():
         self.Zphstmut=None  #phase-static mutual impedance ohm/span 
         self.Ustphw=None    #static wire votgate induced by phase current
         self.Uphstw=None    #phase wire voltega induced by static current
-        self.Ue=None        #Thevenin voltage 
-        self.Ze=None        #Thevenin impedance
+        self.Ue=None        #Thevenin's voltage 
+        self.Ze=None        #Thevenin's impedance
         self.Istwind=None   #induced part of static wire current
         self.Istwcond=None  #conductive part of static wire current
         self.Istwsum=None   #oversall static wire current
         self.Ustwspan=None  #overall static wire voltage in span
         self.Uphwspan=None  #overall phase wire voltage in span
-        self.Uspan=None     #span voltage in Kirchhoff loop  
+        self.Uspan=None     #span Kirchhoff's loop voltage  
     def calculate_self_and_mutual_impedances(self):
         self.Zstw=self.Dtowers*complex(
             self.Rstw,self_reactance(self.Dgrr,GMRfromA(self.Astw)))  
@@ -245,21 +245,12 @@ def write_data_to_latex_file(data, filename):
         index = False,
         position = "h",
         float_format="%.2f",
-        #caption="Távvezeték zárlati áramok nagysága és eloszlása",
-        #label="tab:tavvezetek_eredmenyek"
         ).replace(".", ",")
     print(latextxt)
     with open(filename, "w") as f:
         f.write(latextxt)
     
-def calculate_one_power_line(tower_count):
-    powerline = PowerLine(tower_count)
-    powerline.print_towers_intermediate_results_to_file()
-    powerline.print_line_intermediate_results_to_file()
-    export_towers_results_to_latex(powerline.towers)
-
-def calculate_set_of_power_lines():
-    line_set = tuple(range(25)) + (49, 99, 199)
+def calculate_set_of_power_lines(linesets):
     tower_counts = []
     line_lengths = []
     Uz = []
@@ -267,8 +258,12 @@ def calculate_set_of_power_lines():
     Igmaxtwrid = []
     Iz = []
     Izrel = []
-    for tower_count in line_set:
-        powerline = PowerLine(tower_count+1)
+    for tower_count in linesets:
+        powerline = PowerLine(tower_count)
+        if PRINT_INTERMEDIATE_RESULTS_TO_TXT_FILE:
+            powerline.print_towers_intermediate_results_to_file()
+            powerline.print_line_intermediate_results_to_file()
+        export_towers_results_to_latex(powerline.towers)
         tower_counts.append(len(powerline.towers))
         line_lengths.append(powerline.line_length)
         Igmax.append(powerline.Igmax)
@@ -285,19 +280,12 @@ def calculate_set_of_power_lines():
         "Iz": tuple(Iz),
         "Izrel": tuple(Izrel),
     }
-    filename = f'./out/sorozat.tex'
+    filename = f'./out/tavvezsorozat.tex'
     write_data_to_latex_file(data, filename)
     
 def main():
-    if ONE_LINE_CALCULATION:
-        towerset = [3,5,10,50]
-        if DEBUG:
-            towerset = []
-            towerset.append(2)
-        for tower_count in (towerset):
-            calculate_one_power_line(tower_count)
-        return    
-    calculate_set_of_power_lines()
+    linesets = tuple(range(1, 26)) + (50, 100, 200)
+    calculate_set_of_power_lines(linesets)
     
 
 if __name__=="__main__":
