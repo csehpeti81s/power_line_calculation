@@ -258,6 +258,8 @@ def calculate_set_of_power_lines(linesets):
     Igmaxtwrid = []
     Iz = []
     Izrel = []
+    Igmaxrelline = []
+    Igmaxrelsubst = []
     for tower_count in linesets:
         powerline = PowerLine(tower_count)
         if PRINT_INTERMEDIATE_RESULTS_TO_TXT_FILE:
@@ -271,6 +273,8 @@ def calculate_set_of_power_lines(linesets):
         Uz.append(abs(powerline.Uz))
         Iz.append(abs(powerline.Iz))
         Izrel.append(abs(powerline.Iz) / abs(powerline.Izsubst))
+        Igmaxrelline.append(abs(powerline.Igmax / powerline.Iz))
+        Igmaxrelsubst.append(abs(powerline.Igmax / powerline.Izsubst))
     data = {
         "Oszlopszám" : tuple(tower_counts),
         "Vonalhossz": tuple(line_lengths),
@@ -279,6 +283,8 @@ def calculate_set_of_power_lines(linesets):
         "Uz": tuple(Uz),
         "Iz": tuple(Iz),
         "Izrel": tuple(Izrel),
+        "Igmaxrel": tuple(Igmaxrelline),
+        "Igmaxrelsubst":tuple(Igmaxrelsubst)
     }
     filename = f'./out/tavvezsorozat.tex'
     write_data_to_latex_file(data, filename)
